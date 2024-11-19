@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Table, TableHeader, TableColumn, TableBody, TableRow, TableCell, Card, Button, Input } from '@nextui-org/react';
+import { Table, TableHeader, TableColumn, TableBody, TableRow, TableCell, Card, Button, Input, Modal, ModalContent, ModalHeader, ModalBody, ModalFooter } from '@nextui-org/react';
 import axios from 'axios';
 import { useParams } from 'react-router-dom';
 
@@ -7,6 +7,8 @@ const JokesPage: React.FC = () => {
   const { triggerId } = useParams<{ triggerId: string }>();
   const [jokes, setJokes] = useState([]);
   const [newJoke, setNewJoke] = useState('');
+  const [isOpen, setIsOpen] = useState(false);
+  const [selectedJokeId, setSelectedJokeId] = useState<number | null>(null);
 
   useEffect(() => {
     fetchJokes();
@@ -32,12 +34,20 @@ const JokesPage: React.FC = () => {
     }
   };
 
-  const deleteJoke = async (jokeId: number) => {
-    try {
-      await axios.delete(`http://localhost:8080/api/jokes/${jokeId}`);
-      fetchJokes();
-    } catch (error) {
-      console.error("Error deleting joke:", error);
+  const onDelete = (jokeId: number) => {
+    setSelectedJokeId(jokeId);
+    setIsOpen(true);
+  };
+
+  const handleDeleteJoke = async () => {
+    if (selectedJokeId) {
+      try {
+        await axios.delete(`http://localhost:8080/api/jokes/${selectedJokeId}`);
+        fetchJokes();
+        setIsOpen(false);
+      } catch (error) {
+        console.error("Error deleting joke:", error);
+      }
     }
   };
 
@@ -72,19 +82,63 @@ const JokesPage: React.FC = () => {
                 <TableRow key={joke.id} className="hover:bg-gray-700 transition-colors">
                   <TableCell className="font-semibold">{joke.text}</TableCell>
                   <TableCell>
-                    <Button color="danger" onClick={() => deleteJoke(joke.id)}>Удалить</Button>
+                    <Button 
+                      color="danger" 
+                      onClick={() => onDelete(joke.id)}
+                    >
+                      Удалить
+                    </Button>
                   </TableCell>
                 </TableRow>
               ))
             ) : (
               <TableRow>
-                <TableCell  className="text-center">Нет ответов для отображения</TableCell>
-                <TableCell  className="text-center">Нет ответов для отображения</TableCell>
+                <TableCell className="text-center">Нет ответов для отображения</TableCell>
+                <TableCell className="text-center">Нет ответов для отображения</TableCell>
               </TableRow>
             )}
           </TableBody>
         </Table>
       </Card>
+
+      <Modal 
+        isOpen={isOpen} 
+        onOpenChange={(open) => setIsOpen(open)}
+        classNames={{
+          base: "bg-gray-800",
+          header: "text-white border-b border-gray-700",
+          body: "text-white py-6",
+          footer: "border-t border-gray-700",
+          closeButton: "text-white hover:bg-gray-700 active:bg-gray-600"
+        }}
+      >
+        <ModalContent>
+          {(onClose) => (
+            <>
+              <ModalHeader className="flex flex-col gap-1">Подтверждение удаления</ModalHeader>
+              <ModalBody>
+                <p>Вы действительно хотите удалить этот ответ?</p>
+              </ModalBody>
+              <ModalFooter>
+                <Button 
+                  color="default" 
+                  variant="light" 
+                  onPress={onClose}
+                  className="text-white"
+                >
+                  Отмена
+                </Button>
+                <Button 
+                  color="danger" 
+                  onPress={handleDeleteJoke}
+                >
+                  Удалить
+                </Button>
+              </ModalFooter>
+            </>
+          )}
+        </ModalContent>
+      </Modal>
     </div>
   );
 };

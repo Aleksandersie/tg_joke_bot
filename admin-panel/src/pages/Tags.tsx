@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Card, CardBody, CardHeader, Button, Input, Table, TableHeader, TableColumn, TableBody, TableRow, TableCell } from '@nextui-org/react';
+import { Card, CardBody, CardHeader, Button, Input, Table, TableHeader, TableColumn, TableBody, TableRow, TableCell, Modal, ModalContent, ModalHeader, ModalBody, ModalFooter } from '@nextui-org/react';
 import axios from 'axios';
 import { Link } from 'react-router-dom';
 
@@ -17,7 +17,8 @@ interface Trigger {
 const Tags: React.FC = () => {
   const [triggers, setTriggers] = useState<Trigger[]>([]);
   const [newTrigger, setNewTrigger] = useState<string>('');
-  const [newJoke, setNewJoke] = useState<{ [key: number]: string }>({});
+  const [isOpen, setIsOpen] = useState(false);
+  const [selectedTriggerId, setSelectedTriggerId] = useState<number | null>(null);
 
   useEffect(() => {
     fetchTriggers();
@@ -43,12 +44,20 @@ const Tags: React.FC = () => {
     }
   };
 
-  const handleDeleteTrigger = async (id: number) => {
-    try {
-      await axios.delete(`http://localhost:8080/api/triggers/${id}`);
-      fetchTriggers();
-    } catch (error) {
-      console.error("Error deleting trigger:", error);
+  const onDelete = (id: number) => {
+    setSelectedTriggerId(id);
+    setIsOpen(true);
+  };
+
+  const handleDeleteTrigger = async () => {
+    if (selectedTriggerId) {
+      try {
+        await axios.delete(`http://localhost:8080/api/triggers/${selectedTriggerId}`);
+        fetchTriggers();
+        setIsOpen(false);
+      } catch (error) {
+        console.error("Error deleting trigger:", error);
+      }
     }
   };
 
@@ -57,7 +66,7 @@ const Tags: React.FC = () => {
       <Card className="mb-6 bg-gray-800 shadow-xl">
         <CardHeader className="flex gap-3 bg-gray-700 rounded-t-xl">
           <div className="flex flex-col">
-            <p className="text-xl font-semibold">Новый триггер</p>
+            <p className="text-xl text-white font-semibold">Новый триггер</p>
             <p className="text-small text-gray-400">Добавьте новое слово-триггер для бота</p>
           </div>
         </CardHeader>
@@ -100,13 +109,15 @@ const Tags: React.FC = () => {
               {triggers.map((trigger) => (
                 <TableRow key={trigger.id} className="hover:bg-gray-700 transition-colors">
                   <TableCell className="font-semibold">
-                    <Link to={`/jokes/${trigger.id}`}>{trigger.value}</Link>
+                    <Link to={`/jokes/${trigger.id}`} className="w-full h-full block p-2">
+                      {trigger.value}
+                    </Link>
                   </TableCell>
                   <TableCell>
                     <Button 
                       color="danger"
-                      variant="flat"
-                      onClick={() => handleDeleteTrigger(trigger.id)}
+                      className="text-white bg-danger-500 hover:bg-danger-600"
+                      onClick={() => onDelete(trigger.id)}
                     >
                       Удалить триггер
                     </Button>
@@ -117,6 +128,45 @@ const Tags: React.FC = () => {
           </Table>
         </CardBody>
       </Card>
+
+      <Modal 
+        isOpen={isOpen} 
+        onOpenChange={(open) => setIsOpen(open)}
+        classNames={{
+          base: "bg-gray-800",
+          header: "text-white border-b border-gray-700",
+          body: "text-white py-6",
+          footer: "border-t border-gray-700",
+          closeButton: "text-white hover:bg-gray-700 active:bg-gray-600"
+        }}
+      >
+        <ModalContent>
+          {(onClose) => (
+            <>
+              <ModalHeader className="flex flex-col gap-1">Подтверждение удаления</ModalHeader>
+              <ModalBody>
+                <p>Вы действительно хотите удалить этот триггер?</p>
+              </ModalBody>
+              <ModalFooter>
+                <Button 
+                  color="default" 
+                  variant="light" 
+                  onPress={onClose}
+                  className="text-white"
+                >
+                  Отмена
+                </Button>
+                <Button 
+                  color="danger" 
+                  onPress={handleDeleteTrigger}
+                >
+                  Удалить
+                </Button>
+              </ModalFooter>
+            </>
+          )}
+        </ModalContent>
+      </Modal>
     </div>
   );
 };
