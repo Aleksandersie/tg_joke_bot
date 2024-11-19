@@ -26,17 +26,10 @@ const Sidebar: React.FC = () => {
             className={`w-full justify-start ${isActive('/tags') ? 'bg-primary' : ''}`}
             variant={isActive('/tags') ? 'solid' : 'light'}
           >
-            Теги
+            Триггеры
           </Button>
         </Link>
-        <Link to="/jokes">
-          <Button
-            className={`w-full justify-start ${isActive('/jokes') ? 'bg-primary' : ''}`}
-            variant={isActive('/jokes') ? 'solid' : 'light'}
-          >
-            Анекдоты
-          </Button>
-        </Link>
+      
       </div>
     </div>
   );
