@@ -32,6 +32,13 @@ const Sidebar: React.FC = () => {
         >
           Теги
         </Button>
+        <Button
+          className={`w-full justify-start text-white ${isActive('/jokes-x') ? 'bg-primary' : ''}`}
+          variant={isActive('/jokes-x') ? 'solid' : 'light'}
+          onClick={() => handleNavigation('/jokes-x')}
+        >
+          Анекдоты
+        </Button>
       </div>
     </div>
   );

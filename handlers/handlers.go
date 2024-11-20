@@ -121,3 +121,46 @@ func (h *Handlers) DeleteJoke(c *gin.Context) {
 	}
 	c.Status(http.StatusNoContent)
 }
+
+// GetJokesX обрабатывает GET /api/jokes-x
+func (h *Handlers) GetJokesX(c *gin.Context) {
+	var jokes []models.JokeX
+	if err := h.DB.Find(&jokes).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, jokes)
+}
+
+// CreateJokeX обрабатывает POST /api/jokes-x
+func (h *Handlers) CreateJokeX(c *gin.Context) {
+	var jokeDTO struct {
+		Text string `json:"text" binding:"required"`
+	}
+
+	if err := c.ShouldBindJSON(&jokeDTO); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	joke := models.JokeX{
+		Text: jokeDTO.Text,
+	}
+
+	if err := h.DB.Create(&joke).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusCreated, joke)
+}
+
+// DeleteJokeX обрабатывает DELETE /api/jokes-x/:id
+func (h *Handlers) DeleteJokeX(c *gin.Context) {
+	id := c.Param("id")
+	if err := h.DB.Delete(&models.JokeX{}, id).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.Status(http.StatusNoContent)
+}

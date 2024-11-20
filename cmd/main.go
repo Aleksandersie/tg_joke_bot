@@ -27,7 +27,7 @@ func initDB(cfg *config.Config) {
 	if err != nil {
 		panic("Не удалось подключиться к базе данных: " + err.Error())
 	}
-	err = db.AutoMigrate(&models.Trigger{}, &models.Joke{})
+	err = db.AutoMigrate(&models.Trigger{}, &models.Joke{}, &models.JokeX{})
 	if err != nil {
 		panic("Не удалось выполнить миграцию базы данных: " + err.Error())
 	}
@@ -42,33 +42,72 @@ func startBot(cfg *config.Config) {
 
 	bot.Debug = true
 
+	go sendPeriodicJokes(bot, db)
+
 	updateConfig := tgbotapi.NewUpdate(0)
 	updateConfig.Timeout = 60
 
 	updates := bot.GetUpdatesChan(updateConfig)
 
 	for update := range updates {
-		if update.Message == nil { // игнорируем не сообщения
+		if update.Message == nil {
 			continue
 		}
 
-		// Проверяем наличие триггерных слов в сообщении
+		if strings.Contains(strings.ToLower(update.Message.Text), "хочу анекдот") {
+			var joke models.JokeX
+			result := db.Order("RANDOM()").First(&joke)
+			if result.Error == nil {
+				msg := tgbotapi.NewMessage(update.Message.Chat.ID, joke.Text)
+				bot.Send(msg)
+				continue
+			}
+		}
+
 		var triggers []models.Trigger
-		db.Preload("Jokes").Find(&triggers) // Получаем все триггеры и связанные шутки из базы данных
+		db.Preload("Jokes").Find(&triggers)
 
 		for _, trigger := range triggers {
 			if strings.Contains(strings.ToLower(update.Message.Text), strings.ToLower(trigger.Value)) {
-				// Генерируем случайный индекс для выбора шутки из соответствующей группы
 				rand.Seed(time.Now().UnixNano())
 				if len(trigger.Jokes) > 0 {
 					joke := trigger.Jokes[rand.Intn(len(trigger.Jokes))]
 					msg := tgbotapi.NewMessage(update.Message.Chat.ID, joke.Text)
 					bot.Send(msg)
 				}
-				break // Выходим из цикла после отправки шутки
+				break
 			}
 		}
 	}
+}
+
+func sendPeriodicJokes(bot *tgbotapi.BotAPI, db *gorm.DB) {
+	interval := 3 * time.Hour
+
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+
+	chatIDs := make(map[int64]bool)
+
+	for range ticker.C {
+		var joke models.JokeX
+		result := db.Order("RANDOM()").First(&joke)
+		if result.Error != nil {
+			fmt.Printf("Ошибка при получении анекдота: %v\n", result.Error)
+			continue
+		}
+
+		for chatID := range chatIDs {
+			msg := tgbotapi.NewMessage(chatID, joke.Text)
+			if _, err := bot.Send(msg); err != nil {
+				fmt.Printf("Ошибка при отправке анекдота в чат %d: %v\n", chatID, err)
+			}
+		}
+	}
+}
+
+func addChatToList(chatID int64, chatIDs map[int64]bool) {
+	chatIDs[chatID] = true
 }
 
 func setupRouter(h *handlers.Handlers) *gin.Engine {
@@ -93,6 +132,10 @@ func setupRouter(h *handlers.Handlers) *gin.Engine {
 		api.GET("/triggers/:id/jokes", h.GetJokesByTriggerID)
 		api.POST("/triggers/:id/jokes", h.AddJokeToTrigger)
 		api.DELETE("/jokes/:id", h.DeleteJoke)
+
+		api.GET("/jokes-x", h.GetJokesX)
+		api.POST("/jokes-x", h.CreateJokeX)
+		api.DELETE("/jokes-x/:id", h.DeleteJokeX)
 	}
 
 	// Раздача статических файлов админ-панели через NoRoute
@@ -104,16 +147,13 @@ func setupRouter(h *handlers.Handlers) *gin.Engine {
 }
 
 func main() {
-	cfg := config.NewConfig() // Создаем конфигурацию
-	initDB(cfg)               // Инициализируем базу данных с конфигурацией
+	cfg := config.NewConfig()
+	initDB(cfg)
 
-	// Создаем обработчики с доступом к базе данных
 	h := handlers.NewHandlers(db)
 
-	// Запускаем бота в отдельной горутине
 	go startBot(cfg)
 
-	// Запускаем HTTP-сервер с использованием Gin
 	router := setupRouter(h)
 	fmt.Println("Запуск веб-сервера на :8080")
 	if err := router.Run(":8080"); err != nil {

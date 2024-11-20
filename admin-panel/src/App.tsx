@@ -4,6 +4,7 @@ import Sidebar from './components/Sidebar';
 import Dashboard from './pages/Dashboard';
 import Tags from './pages/Tags';
 import JokesPage from './pages/JokesPage';
+import JokesX from './pages/JokesX';
 
 const App: React.FC = () => {
   return (
@@ -14,6 +15,7 @@ const App: React.FC = () => {
           <Route path="/" element={<Dashboard />} />
           <Route path="/tags" element={<Tags />} />
           <Route path="/jokes/:triggerId" element={<JokesPage />} />
+          <Route path="/jokes-x" element={<JokesX />} />
         </Routes>
       </div>
     </div>
