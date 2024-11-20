@@ -1,8 +1,11 @@
 package main
 
 import (
+	"encoding/json"
 	"fmt"
+	"io/ioutil"
 	"math/rand"
+	"net/http"
 	"strings"
 	"time"
 
@@ -18,6 +21,113 @@ import (
 )
 
 var db *gorm.DB
+
+// WeatherResponse структура для парсинга ответа от WeatherAPI
+type WeatherResponse struct {
+	Location struct {
+		Name    string  `json:"name"`
+		Region  string  `json:"region"`
+		Country string  `json:"country"`
+		Lat     float64 `json:"lat"`
+		Lon     float64 `json:"lon"`
+	} `json:"location"`
+	Current struct {
+		TempC     float64 `json:"temp_c"`
+		Condition struct {
+			Text string `json:"text"`
+		} `json:"condition"`
+		WindKph    float64 `json:"wind_kph"`
+		Humidity   int     `json:"humidity"`
+		FeelslikeC float64 `json:"feelslike_c"`
+	} `json:"current"`
+}
+
+func getWeather(cfg *config.Config) (models.Weather, error) {
+	url := fmt.Sprintf("http://api.weatherapi.com/v1/current.json?key=%s&q=Krasnodar&lang=ru", cfg.WeatherAPIKey)
+
+	client := &http.Client{
+		Timeout: 10 * time.Second,
+	}
+
+	req, err := http.NewRequest("GET", url, nil)
+	if err != nil {
+		return models.Weather{}, fmt.Errorf("error creating request: %v", err)
+	}
+
+	req.Header.Add("Accept", "application/json")
+	req.Header.Add("Content-Type", "application/json")
+
+	resp, err := client.Do(req)
+	if err != nil {
+		return models.Weather{}, fmt.Errorf("error making request: %v", err)
+	}
+	defer resp.Body.Close()
+
+	body, err := ioutil.ReadAll(resp.Body)
+	if err != nil {
+		return models.Weather{}, fmt.Errorf("error reading response body: %v", err)
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		return models.Weather{}, fmt.Errorf("API returned non-200 status code: %d, body: %s", resp.StatusCode, string(body))
+	}
+
+	var weatherResp WeatherResponse
+	if err := json.Unmarshal(body, &weatherResp); err != nil {
+		return models.Weather{}, fmt.Errorf("error parsing JSON: %v, body: %s", err, string(body))
+	}
+
+	weather := models.Weather{
+		Temperature: weatherResp.Current.TempC,
+		Description: weatherResp.Current.Condition.Text,
+		City:        weatherResp.Location.Name,
+	}
+
+	return weather, nil
+}
+
+func formatWeatherMessage(weather models.Weather) string {
+	return fmt.Sprintf(
+		"Погода в городе %s:\nТемпература: %.1f°C\nПогода: %s",
+		weather.City,
+		weather.Temperature,
+		weather.Description,
+	)
+}
+
+func sendPeriodicWeather(bot *tgbotapi.BotAPI, chatIDs map[int64]bool, cfg *config.Config) {
+	for {
+		now := time.Now()
+		next := now
+		hour := now.Hour()
+
+		if hour < 9 {
+			next = time.Date(now.Year(), now.Month(), now.Day(), 9, 0, 0, 0, now.Location())
+		} else if hour < 14 {
+			next = time.Date(now.Year(), now.Month(), now.Day(), 14, 0, 0, 0, now.Location())
+		} else if hour < 19 {
+			next = time.Date(now.Year(), now.Month(), now.Day(), 19, 0, 0, 0, now.Location())
+		} else {
+			next = time.Date(now.Year(), now.Month(), now.Day()+1, 9, 0, 0, 0, now.Location())
+		}
+
+		time.Sleep(time.Until(next))
+
+		weather, err := getWeather(cfg)
+		if err != nil {
+			fmt.Printf("Ошибка получения погоды: %v\n", err)
+			continue
+		}
+
+		weatherMsg := formatWeatherMessage(weather)
+		for chatID := range chatIDs {
+			msg := tgbotapi.NewMessage(chatID, weatherMsg)
+			if _, err := bot.Send(msg); err != nil {
+				fmt.Printf("Ошибка отправки погоды в чат %d: %v\n", chatID, err)
+			}
+		}
+	}
+}
 
 func initDB(cfg *config.Config) {
 	var err error
@@ -41,8 +151,10 @@ func startBot(cfg *config.Config) {
 	}
 
 	bot.Debug = true
+	chatIDs := make(map[int64]bool)
 
 	go sendPeriodicJokes(bot, db)
+	go sendPeriodicWeather(bot, chatIDs, cfg)
 
 	updateConfig := tgbotapi.NewUpdate(0)
 	updateConfig.Timeout = 60
@@ -51,6 +163,21 @@ func startBot(cfg *config.Config) {
 
 	for update := range updates {
 		if update.Message == nil {
+			continue
+		}
+
+		chatIDs[update.Message.Chat.ID] = true
+
+		if strings.Contains(strings.ToLower(update.Message.Text), "какая погода") {
+			weather, err := getWeather(cfg)
+			if err != nil {
+				msg := tgbotapi.NewMessage(update.Message.Chat.ID, "Извините, не удалось получить данные о погоде. Попробуйте позже.")
+				bot.Send(msg)
+			} else {
+				weatherMsg := formatWeatherMessage(weather)
+				msg := tgbotapi.NewMessage(update.Message.Chat.ID, weatherMsg)
+				bot.Send(msg)
+			}
 			continue
 		}
 
